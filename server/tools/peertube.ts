@@ -22,6 +22,7 @@ program
   .command('repl', 'initiate a REPL to access internals')
   .command('plugins [action]', 'manage instance plugins/themes').alias('p')
   .command('redundancy [action]', 'manage instance redundancies').alias('r')
+  .command('follow [action]', 'manage instance followings').alias('f')
 
 /* Not Yet Implemented */
 program
