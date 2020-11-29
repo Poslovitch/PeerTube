@@ -12,7 +12,7 @@ program
 program
   .command('list')
   .description('List followed instances')
-  .action((options) => listFollowedInstancesCLI(options))
+  .action(() => listFollowedInstancesCLI())
 
 program
   .command('add')
@@ -36,7 +36,7 @@ program.parse(process.argv)
 
 // ----------------------------------------------------------------------------
 
-async function listFollowedInstancesCLI (options) {
+async function listFollowedInstancesCLI () {
   const { url, username, password } = await getServerCredentials(program)
   const followedInstances = (await getFollowingListPaginationAndSort({
     url: url,
