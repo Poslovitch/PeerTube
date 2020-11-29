@@ -13,6 +13,12 @@
           <div class="followers" i18n>{videoChannel.followersCount, plural, =1 {1 subscriber} other {{{ videoChannel.followersCount }} subscribers}}</div>
         </a>
 
+        <button
+          type="button"
+          class="btn btn-sm" role="button">
+          <ng-container>Play all videos</ng-container>
+        </button>
+
         <my-subscribe-button [videoChannels]="[videoChannel]"></my-subscribe-button>
       </div>
 
