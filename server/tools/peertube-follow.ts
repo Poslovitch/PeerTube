@@ -12,7 +12,7 @@ program
 program
   .command('list')
   .description('List followed instances')
-  .action(() => listFollowedInstancesCLI())
+  .action((options) => listFollowedInstancesCLI(options))
 
 program
   .command('add')
@@ -36,26 +36,28 @@ program.parse(process.argv)
 
 // ----------------------------------------------------------------------------
 
-async function listFollowedInstancesCLI () {
+async function listFollowedInstancesCLI (options) {
   const { url, username, password } = await getServerCredentials(program)
-  getFollowingListPaginationAndSort({
+  const followedInstances = (await getFollowingListPaginationAndSort({
     url: url,
     start: 0,
     count: 50,
     sort: '-createdAt'
-  })
+  })).body
+
+  console.log(`This instance is following a total of ${ followedInstances.total } instances.`)
+  console.log(followedInstances.data)
 }
 
-async function followCLI (options: { hostname: string }) {
+async function followCLI (options: { host: string }) {
   const { url, username, password } = await getServerCredentials(program)
   const accessToken = await getAdminTokenOrDie(url, username, password)
 
-  follow(url, [options['hostname']], accessToken)
-
   try {
-    await follow(url, [options['hostname']], accessToken)
+    await follow(url, [options['host']], accessToken)
+    // Error: expected 204 "No Content", got 400 "Bad Request"
 
-    console.log(`Successfully followed ${ options['hostname'] }`)
+    console.log(`Successfully followed ${ options['host'] }`)
 
     process.exit(0)
   } catch (err) {
@@ -69,6 +71,6 @@ async function followCLI (options: { hostname: string }) {
   }
 }
 
-async function unfollowCLI (options: { hostname: string }) {
+async function unfollowCLI (options: { host: string }) {
 
 }
