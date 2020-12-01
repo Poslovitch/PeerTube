@@ -7,6 +7,7 @@ import { SharedUserSubscriptionModule } from '@app/shared/shared-user-subscripti
 import { SharedVideoMiniatureModule } from '@app/shared/shared-video-miniature'
 import { AccountAboutComponent } from './account-about/account-about.component'
 import { AccountVideoChannelsComponent } from './account-video-channels/account-video-channels.component'
+import { PlayAllVideosButtonComponent} from './account-video-channels/my-play-all-videos-button.component'
 import { AccountVideosComponent } from './account-videos/account-videos.component'
 import { AccountsRoutingModule } from './accounts-routing.module'
 import { AccountsComponent } from './accounts.component'
@@ -27,7 +28,8 @@ import { AccountsComponent } from './accounts.component'
     AccountsComponent,
     AccountVideosComponent,
     AccountVideoChannelsComponent,
-    AccountAboutComponent
+    AccountAboutComponent,
+    PlayAllVideosButtonComponent
   ],
 
   exports: [
