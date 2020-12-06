@@ -6,6 +6,7 @@ import { AboutInstanceComponent } from '@app/+about/about-instance/about-instanc
 import { AboutPeertubeComponent } from '@app/+about/about-peertube/about-peertube.component'
 import { AboutFollowsComponent } from '@app/+about/about-follows/about-follows.component'
 import { AboutInstanceResolver } from '@app/+about/about-instance/about-instance.resolver'
+import { AboutTeamComponent } from '@app/+about/about-team/about-team.component'
 
 const aboutRoutes: Routes = [
   {
@@ -45,6 +46,15 @@ const aboutRoutes: Routes = [
         data: {
           meta: {
             title: $localize`About this instance's network`
+          }
+        }
+      },
+      {
+        path: 'team',
+        component: AboutTeamComponent,
+        data: {
+          meta: {
+            title: $localize`About this instance's team`
           }
         }
       }
