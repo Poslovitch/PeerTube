@@ -18,6 +18,7 @@ import { CheatSheetComponent } from './hotkeys'
 import { MenuService } from './menu'
 import { throwIfAlreadyLoaded } from './module-import-guard'
 import { Notifier } from './notification'
+import { FromNowPipe } from '../shared/shared-main/angular'
 import { HtmlRendererService, LinkifierService, MarkdownService } from './renderer'
 import { RestExtractor, RestService } from './rest'
 import { LoginGuard, RedirectService, UserRightGuard } from './routing'
@@ -82,6 +83,8 @@ import { LocalStorageService, ScreenService, SessionStorageService } from './wra
     ScreenService,
     LocalStorageService,
     SessionStorageService,
+
+    FromNowPipe,
 
     RedirectService,
     Notifier,

@@ -35,7 +35,8 @@ export class Notifier {
       detail: text,
       closable: true,
       life: timeout || this.TIMEOUT,
-      sticky
+      sticky,
+      data: {createdAt: new Date()}
     })
   }
 }
