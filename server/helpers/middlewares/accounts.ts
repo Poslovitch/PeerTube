@@ -1,8 +1,8 @@
 import { Response } from 'express'
-import { AccountModel } from '../../models/account/account'
-import * as Bluebird from 'bluebird'
-import { MAccountDefault } from '../../types/models'
 import { UserModel } from '@server/models/account/user'
+import { HttpStatusCode } from '../../../shared/core-utils/miscs/http-error-codes'
+import { AccountModel } from '../../models/account/account'
+import { MAccountDefault } from '../../types/models'
 
 function doesAccountIdExist (id: number | string, res: Response, sendNotFound = true) {
   const promise = AccountModel.load(parseInt(id + '', 10))
@@ -22,12 +22,12 @@ function doesAccountNameWithHostExist (nameWithDomain: string, res: Response, se
   return doesAccountExist(promise, res, sendNotFound)
 }
 
-async function doesAccountExist (p: Bluebird<MAccountDefault>, res: Response, sendNotFound: boolean) {
+async function doesAccountExist (p: Promise<MAccountDefault>, res: Response, sendNotFound: boolean) {
   const account = await p
 
   if (!account) {
     if (sendNotFound === true) {
-      res.status(404)
+      res.status(HttpStatusCode.NOT_FOUND_404)
          .json({ error: 'Account not found' })
     }
 
@@ -43,7 +43,7 @@ async function doesUserFeedTokenCorrespond (id: number, token: string, res: Resp
   const user = await UserModel.loadByIdWithChannels(parseInt(id + '', 10))
 
   if (token !== user.feedToken) {
-    res.status(403)
+    res.status(HttpStatusCode.FORBIDDEN_403)
        .json({ error: 'User and token mismatch' })
 
     return false

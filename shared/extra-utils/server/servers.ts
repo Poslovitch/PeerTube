@@ -2,11 +2,11 @@
 
 import { expect } from 'chai'
 import { ChildProcess, exec, fork } from 'child_process'
-import { copy, pathExists, readdir, readFile, remove } from 'fs-extra'
+import { copy, ensureDir, pathExists, readdir, readFile, remove } from 'fs-extra'
 import { join } from 'path'
 import { randomInt } from '../../core-utils/miscs/miscs'
 import { VideoChannel } from '../../models/videos'
-import { buildServerDirectory, getFileSize, root, wait } from '../miscs/miscs'
+import { buildServerDirectory, getFileSize, isGithubCI, root, wait } from '../miscs/miscs'
 
 interface ServerInfo {
   app: ChildProcess
@@ -42,6 +42,7 @@ interface ServerInfo {
     id: number
     uuid: string
     name?: string
+    url?: string
     account?: {
       name: string
     }
@@ -104,7 +105,12 @@ function randomRTMP () {
   return randomInt(low, high)
 }
 
-async function flushAndRunServer (serverNumber: number, configOverride?: Object, args = [], silent = true) {
+type RunServerOptions = {
+  hideLogs?: boolean
+  execArgv?: string[]
+}
+
+async function flushAndRunServer (serverNumber: number, configOverride?: Object, args = [], options: RunServerOptions = {}) {
   const parallel = parallelTests()
 
   const internalServerNumber = parallel ? randomServer() : serverNumber
@@ -133,10 +139,10 @@ async function flushAndRunServer (serverNumber: number, configOverride?: Object,
     }
   }
 
-  return runServer(server, configOverride, args, silent)
+  return runServer(server, configOverride, args, options)
 }
 
-async function runServer (server: ServerInfo, configOverrideArg?: any, args = [], silent?: boolean) {
+async function runServer (server: ServerInfo, configOverrideArg?: any, args = [], options: RunServerOptions = {}) {
   // These actions are async so we need to be sure that they have both been done
   const serverRunString = {
     'Server listening': false
@@ -208,14 +214,15 @@ async function runServer (server: ServerInfo, configOverrideArg?: any, args = []
   env['NODE_APP_INSTANCE'] = server.internalServerNumber.toString()
   env['NODE_CONFIG'] = JSON.stringify(configOverride)
 
-  const options = {
+  const forkOptions = {
     silent: true,
     env,
-    detached: true
+    detached: true,
+    execArgv: options.execArgv || []
   }
 
   return new Promise<ServerInfo>(res => {
-    server.app = fork(join(root(), 'dist', 'server.js'), args, options)
+    server.app = fork(join(root(), 'dist', 'server.js'), args, forkOptions)
     server.app.stdout.on('data', function onStdout (data) {
       let dontContinue = false
 
@@ -240,7 +247,7 @@ async function runServer (server: ServerInfo, configOverrideArg?: any, args = []
       // If no, there is maybe one thing not already initialized (client/user credentials generation...)
       if (dontContinue === true) return
 
-      if (silent === false) {
+      if (options.hideLogs === false) {
         console.log(data.toString())
       } else {
         server.app.stdout.removeListener('data', onStdout)
@@ -291,11 +298,23 @@ function killallServers (servers: ServerInfo[]) {
   }
 }
 
-function cleanupTests (servers: ServerInfo[]) {
+async function cleanupTests (servers: ServerInfo[]) {
   killallServers(servers)
+
+  if (isGithubCI()) {
+    await ensureDir('artifacts')
+  }
 
   const p: Promise<any>[] = []
   for (const server of servers) {
+    if (isGithubCI()) {
+      const origin = await buildServerDirectory(server, 'logs/peertube.log')
+      const destname = `peertube-${server.internalServerNumber}.log`
+      console.log('Saving logs %s.', destname)
+
+      await copy(origin, join('artifacts', destname))
+    }
+
     if (server.parallel) {
       p.push(flushTests(server.internalServerNumber))
     }

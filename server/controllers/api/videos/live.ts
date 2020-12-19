@@ -16,6 +16,7 @@ import { sequelizeTypescript } from '../../../initializers/database'
 import { createVideoMiniatureFromExisting } from '../../../lib/thumbnail'
 import { asyncMiddleware, asyncRetryTransactionMiddleware, authenticate } from '../../../middlewares'
 import { VideoModel } from '../../../models/video/video'
+import { HttpStatusCode } from '../../../../shared/core-utils/miscs/http-error-codes'
 
 const liveRouter = express.Router()
 
@@ -67,13 +68,15 @@ async function updateLiveVideo (req: express.Request, res: express.Response) {
 
   const video = res.locals.videoAll
   const videoLive = res.locals.videoLive
+
   videoLive.saveReplay = body.saveReplay || false
+  videoLive.permanentLive = body.permanentLive || false
 
   video.VideoLive = await videoLive.save()
 
   await federateVideoIfNeeded(video, false)
 
-  return res.sendStatus(204)
+  return res.sendStatus(HttpStatusCode.NO_CONTENT_204)
 }
 
 async function addLiveVideo (req: express.Request, res: express.Response) {
@@ -90,6 +93,7 @@ async function addLiveVideo (req: express.Request, res: express.Response) {
 
   const videoLive = new VideoLiveModel()
   videoLive.saveReplay = videoInfo.saveReplay || false
+  videoLive.permanentLive = videoInfo.permanentLive || false
   videoLive.streamKey = uuidv4()
 
   const [ thumbnailModel, previewModel ] = await buildVideoThumbnailsFromReq({

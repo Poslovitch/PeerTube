@@ -76,6 +76,7 @@ import { sendCreateVideo, sendUpdateVideo } from './send'
 import { addVideoShares, shareVideoByServerAndChannel } from './share'
 import { addVideoComments } from './video-comments'
 import { createRates } from './video-rates'
+import { HttpStatusCode } from '../../../shared/core-utils/miscs/http-error-codes'
 
 async function federateVideoIfNeeded (videoArg: MVideoAPWithoutCaption, isNewVideo: boolean, transaction?: sequelize.Transaction) {
   const video = videoArg as MVideoAP
@@ -351,6 +352,9 @@ async function updateVideoFromAP (options: {
       video.views = videoData.views
       video.isLive = videoData.isLive
 
+      // Ensures we update the updated video attribute
+      video.changed('updatedAt', true)
+
       const videoUpdated = await video.save(sequelizeOptions) as MVideoFullLight
 
       if (thumbnailModel) await videoUpdated.addAndSaveThumbnail(thumbnailModel, t)
@@ -429,6 +433,7 @@ async function updateVideoFromAP (options: {
         if (video.isLive) {
           const [ videoLive ] = await VideoLiveModel.upsert({
             saveReplay: videoObject.liveSaveReplay,
+            permanentLive: videoObject.permanentLive,
             videoId: video.id
           }, { transaction: t, returning: true })
 
@@ -456,8 +461,13 @@ async function updateVideoFromAP (options: {
       transaction: undefined
     })
 
-    if (wasPrivateVideo || wasUnlistedVideo) Notifier.Instance.notifyOnNewVideoIfNeeded(videoUpdated) // Notify our users?
-    if (videoUpdated.isLive) PeerTubeSocket.Instance.sendVideoLiveNewState(videoUpdated)
+    // Notify our users?
+    if (wasPrivateVideo || wasUnlistedVideo) Notifier.Instance.notifyOnNewVideoIfNeeded(videoUpdated)
+
+    if (videoUpdated.isLive) {
+      PeerTubeSocket.Instance.sendVideoLiveNewState(videoUpdated)
+      PeerTubeSocket.Instance.sendVideoViewsUpdate(videoUpdated)
+    }
 
     logger.info('Remote video with uuid %s updated', videoObject.uuid)
 
@@ -487,7 +497,7 @@ async function refreshVideoIfNeeded (options: {
 
   try {
     const { response, videoObject } = await fetchRemoteVideo(video.url)
-    if (response.statusCode === 404) {
+    if (response.statusCode === HttpStatusCode.NOT_FOUND_404) {
       logger.info('Cannot refresh remote video %s: video does not exist anymore. Deleting it.', video.url)
 
       // Video does not exist anymore
@@ -631,6 +641,7 @@ async function createVideo (videoObject: VideoObject, channel: MChannelAccountLi
       const videoLive = new VideoLiveModel({
         streamKey: null,
         saveReplay: videoObject.liveSaveReplay,
+        permanentLive: videoObject.permanentLive,
         videoId: videoCreated.id
       })
 

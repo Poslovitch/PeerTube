@@ -6,12 +6,13 @@ import { pathExists, readdir } from 'fs-extra'
 import { omit } from 'lodash'
 import { join } from 'path'
 import { LiveVideo, LiveVideoCreate, LiveVideoUpdate, VideoDetails, VideoState } from '@shared/models'
+import { HttpStatusCode } from '../../../shared/core-utils/miscs/http-error-codes'
 import { buildAbsoluteFixturePath, buildServerDirectory, wait } from '../miscs/miscs'
 import { makeGetRequest, makePutBodyRequest, makeUploadRequest } from '../requests/requests'
-import { ServerInfo } from '../server/servers'
+import { ServerInfo, waitUntilLog } from '../server/servers'
 import { getVideoWithToken } from './videos'
 
-function getLive (url: string, token: string, videoId: number | string, statusCodeExpected = 200) {
+function getLive (url: string, token: string, videoId: number | string, statusCodeExpected = HttpStatusCode.OK_200) {
   const path = '/api/v1/videos/live'
 
   return makeGetRequest({
@@ -22,7 +23,13 @@ function getLive (url: string, token: string, videoId: number | string, statusCo
   })
 }
 
-function updateLive (url: string, token: string, videoId: number | string, fields: LiveVideoUpdate, statusCodeExpected = 204) {
+function updateLive (
+  url: string,
+  token: string,
+  videoId: number | string,
+  fields: LiveVideoUpdate,
+  statusCodeExpected = HttpStatusCode.NO_CONTENT_204
+) {
   const path = '/api/v1/videos/live'
 
   return makePutBodyRequest({
@@ -34,7 +41,7 @@ function updateLive (url: string, token: string, videoId: number | string, field
   })
 }
 
-function createLive (url: string, token: string, fields: LiveVideoCreate, statusCodeExpected = 200) {
+function createLive (url: string, token: string, fields: LiveVideoCreate, statusCodeExpected = HttpStatusCode.OK_200) {
   const path = '/api/v1/videos/live'
 
   const attaches: any = {}
@@ -112,7 +119,7 @@ async function testFfmpegStreamError (command: ffmpeg.FfmpegCommand, shouldHaveE
   let error: Error
 
   try {
-    await waitFfmpegUntilError(command, 15000)
+    await waitFfmpegUntilError(command, 25000)
   } catch (err) {
     error = err
   }
@@ -129,19 +136,24 @@ async function stopFfmpeg (command: ffmpeg.FfmpegCommand) {
   await wait(500)
 }
 
-function waitUntilLiveStarts (url: string, token: string, videoId: number | string) {
-  return waitWhileLiveState(url, token, videoId, VideoState.WAITING_FOR_LIVE)
+function waitUntilLivePublished (url: string, token: string, videoId: number | string) {
+  return waitUntilLiveState(url, token, videoId, VideoState.PUBLISHED)
 }
 
-function waitUntilLivePublished (url: string, token: string, videoId: number | string) {
-  return waitWhileLiveState(url, token, videoId, VideoState.PUBLISHED)
+function waitUntilLiveWaiting (url: string, token: string, videoId: number | string) {
+  return waitUntilLiveState(url, token, videoId, VideoState.WAITING_FOR_LIVE)
 }
 
 function waitUntilLiveEnded (url: string, token: string, videoId: number | string) {
-  return waitWhileLiveState(url, token, videoId, VideoState.LIVE_ENDED)
+  return waitUntilLiveState(url, token, videoId, VideoState.LIVE_ENDED)
 }
 
-async function waitWhileLiveState (url: string, token: string, videoId: number | string, state: VideoState) {
+function waitUntilLiveSegmentGeneration (server: ServerInfo, videoUUID: string, resolutionNum: number, segmentNum: number) {
+  const segmentName = `${resolutionNum}-00000${segmentNum}.ts`
+  return waitUntilLog(server, `${videoUUID}/${segmentName}`, 2, false)
+}
+
+async function waitUntilLiveState (url: string, token: string, videoId: number | string, state: VideoState) {
   let video: VideoDetails
 
   do {
@@ -149,7 +161,7 @@ async function waitWhileLiveState (url: string, token: string, videoId: number |
     video = res.body
 
     await wait(500)
-  } while (video.state.id === state)
+  } while (video.state.id !== state)
 }
 
 async function checkLiveCleanup (server: ServerInfo, videoUUID: string, resolutions: number[] = []) {
@@ -177,17 +189,28 @@ async function checkLiveCleanup (server: ServerInfo, videoUUID: string, resoluti
   expect(files).to.contain('segments-sha256.json')
 }
 
+async function getPlaylistsCount (server: ServerInfo, videoUUID: string) {
+  const basePath = buildServerDirectory(server, 'streaming-playlists')
+  const hlsPath = join(basePath, 'hls', videoUUID)
+
+  const files = await readdir(hlsPath)
+
+  return files.filter(f => f.endsWith('.m3u8')).length
+}
+
 // ---------------------------------------------------------------------------
 
 export {
   getLive,
+  getPlaylistsCount,
   waitUntilLivePublished,
   updateLive,
-  waitUntilLiveStarts,
   createLive,
   runAndTestFfmpegStreamError,
   checkLiveCleanup,
+  waitUntilLiveSegmentGeneration,
   stopFfmpeg,
+  waitUntilLiveWaiting,
   sendRTMPStreamInVideo,
   waitUntilLiveEnded,
   waitFfmpegUntilError,

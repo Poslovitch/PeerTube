@@ -2,6 +2,7 @@ import * as express from 'express'
 import { body } from 'express-validator'
 import { isIntOrNull } from '@server/helpers/custom-validators/misc'
 import { isEmailEnabled } from '@server/initializers/config'
+import { HttpStatusCode } from '../../../shared/core-utils/miscs/http-error-codes'
 import { CustomConfig } from '../../../shared/models/server/custom-config.model'
 import { isThemeNameValid } from '../../helpers/custom-validators/plugins'
 import { isUserNSFWPolicyValid, isUserVideoQuotaDailyValid, isUserVideoQuotaValid } from '../../helpers/custom-validators/users'
@@ -64,7 +65,7 @@ const customConfigUpdateValidator = [
 
   body('live.enabled').isBoolean().withMessage('Should have a valid live enabled boolean'),
   body('live.allowReplay').isBoolean().withMessage('Should have a valid live allow replay boolean'),
-  body('live.maxDuration').custom(isIntOrNull).withMessage('Should have a valid live max duration'),
+  body('live.maxDuration').isInt().withMessage('Should have a valid live max duration'),
   body('live.maxInstanceLives').custom(isIntOrNull).withMessage('Should have a valid max instance lives'),
   body('live.maxUserLives').custom(isIntOrNull).withMessage('Should have a valid max user lives'),
   body('live.transcoding.enabled').isBoolean().withMessage('Should have a valid live transcoding enabled boolean'),
@@ -105,9 +106,9 @@ function checkInvalidConfigIfEmailDisabled (customConfig: CustomConfig, res: exp
   if (isEmailEnabled()) return true
 
   if (customConfig.signup.requiresEmailVerification === true) {
-    res.status(400)
-      .send({ error: 'Emailer is disabled but you require signup email verification.' })
-      .end()
+    res.status(HttpStatusCode.BAD_REQUEST_400)
+       .send({ error: 'Emailer is disabled but you require signup email verification.' })
+       .end()
     return false
   }
 
@@ -118,7 +119,7 @@ function checkInvalidTranscodingConfig (customConfig: CustomConfig, res: express
   if (customConfig.transcoding.enabled === false) return true
 
   if (customConfig.transcoding.webtorrent.enabled === false && customConfig.transcoding.hls.enabled === false) {
-    res.status(400)
+    res.status(HttpStatusCode.BAD_REQUEST_400)
        .send({ error: 'You need to enable at least webtorrent transcoding or hls transcoding' })
        .end()
     return false
@@ -131,7 +132,7 @@ function checkInvalidLiveConfig (customConfig: CustomConfig, res: express.Respon
   if (customConfig.live.enabled === false) return true
 
   if (customConfig.live.allowReplay === true && customConfig.transcoding.enabled === false) {
-    res.status(400)
+    res.status(HttpStatusCode.BAD_REQUEST_400)
        .send({ error: 'You cannot allow live replay if transcoding is not enabled' })
        .end()
     return false

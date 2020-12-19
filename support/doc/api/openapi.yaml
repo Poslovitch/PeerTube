@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: PeerTube
-  version: 2.4.0
+  version: 3.0.0-rc.1
   contact:
     name: PeerTube Community
     url: 'https://joinpeertube.org'
@@ -72,7 +72,7 @@ tags:
       new videos, and how to keep up to date with their latest publications!
   - name: My History
     description: >
-      Operations related to your watch history. 
+      Operations related to your watch history.
   - name: My Notifications
     description: >
       Notifications following new videos, follows or reports. They allow you
@@ -356,15 +356,17 @@ paths:
         - name: state
           in: path
           required: true
-          description: The state of the job
+          description: The state of the job ('' for for no filter)
           schema:
             type: string
             enum:
+              - ''
               - active
               - completed
               - failed
               - waiting
               - delayed
+        - $ref: '#/components/parameters/jobType'
         - $ref: '#/components/parameters/start'
         - $ref: '#/components/parameters/count'
         - $ref: '#/components/parameters/sort'
@@ -972,6 +974,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Avatar'
+        '413':
+          description: image file too large
+          headers:
+            X-File-Maximum-Size:
+              schema:
+                type: string
+                format: Nginx size
+              description: Maximum file size for the avatar
       requestBody:
         content:
           multipart/form-data:
@@ -1304,12 +1314,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VideoUploadResponse'
+        '400':
+          description: invalid file field, schedule date or parameter
         '403':
-          description: user video quota is exceeded with this video
+          description: video didn't pass upload filter
         '408':
           description: upload has timed out
+        '413':
+          description: video file too large, due to quota or max body size limit set by the reverse-proxy
+          headers:
+            X-File-Maximum-Size:
+              schema:
+                type: string
+                format: Nginx size
+              description: Maximum file size for the video
+        '415':
+          description: video type unsupported
         '422':
-          description: invalid input file
+          description: video unreadable
       requestBody:
         content:
           multipart/form-data:
@@ -1518,10 +1540,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VideoUploadResponse'
-        '409':
-          description: HTTP or Torrent/magnetURI import not enabled
         '400':
           description: '`magnetUri` or `targetUrl` or a torrent file missing'
+        '403':
+          description: video didn't pass pre-import filter
+        '409':
+          description: HTTP or Torrent/magnetURI import not enabled
 
   /videos/live:
     post:
@@ -1550,6 +1574,9 @@ paths:
                   description: Channel id that will contain this live video
                   type: integer
                 saveReplay:
+                  type: boolean
+                permanentLive:
+                  description: User can stream multiple times in a permanent live
                   type: boolean
                 thumbnailfile:
                   description: Live video/replay thumbnail file
@@ -3553,7 +3580,7 @@ components:
       name: name
       in: path
       required: true
-      description: The name of the account
+      description: The username or handle of the account
       schema:
         type: string
         example: chocobozzz | chocobozzz@example.org
@@ -3755,6 +3782,26 @@ components:
       schema:
         type: string
         example: peertube-plugin-auth-ldap
+    jobType:
+      name: jobType
+      in: query
+      required: false
+      description: job type
+      schema:
+        type: string
+        enum:
+          - activitypub-follow
+          - activitypub-http-broadcast
+          - activitypub-http-fetcher
+          - activitypub-http-unicast
+          - email
+          - video-transcoding
+          - video-file-import
+          - video-import
+          - videos-views
+          - activitypub-refresher
+          - video-redundancy
+          - video-live-ending
   securitySchemes:
     OAuth2:
       description: >
@@ -5156,7 +5203,7 @@ components:
           properties:
             name:
               type: string
-              description: The name for the default channel
+              description: The username for the default channel
               pattern: '/^[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\\-_.:]+$/'
             displayName:
               type: string
@@ -5598,6 +5645,9 @@ components:
       properties:
         saveReplay:
           type: boolean
+        permanentLive:
+          description: User can stream multiple times in a permanent live
+          type: boolean
 
     LiveVideoResponse:
       properties:
@@ -5607,6 +5657,9 @@ components:
           type: string
           description: RTMP stream key to use to stream into this live video
         saveReplay:
+          type: boolean
+        permanentLive:
+          description: User can stream multiple times in a permanent live
           type: boolean
 
   callbacks:

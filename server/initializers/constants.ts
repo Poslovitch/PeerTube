@@ -24,7 +24,7 @@ import { CONFIG, registerConfigChangedHandler } from './config'
 
 // ---------------------------------------------------------------------------
 
-const LAST_MIGRATION_VERSION = 560
+const LAST_MIGRATION_VERSION = 570
 
 // ---------------------------------------------------------------------------
 
@@ -85,7 +85,7 @@ const SORTABLE_COLUMNS = {
 
   USER_NOTIFICATIONS: [ 'createdAt', 'read' ],
 
-  VIDEO_PLAYLISTS: [ 'displayName', 'createdAt', 'updatedAt' ],
+  VIDEO_PLAYLISTS: [ 'name', 'displayName', 'createdAt', 'updatedAt' ],
 
   PLUGINS: [ 'name', 'createdAt', 'updatedAt' ],
 
@@ -194,7 +194,8 @@ const SCHEDULER_INTERVALS_MS = {
   checkPlugins: CONFIG.PLUGINS.INDEX.CHECK_LATEST_VERSIONS_INTERVAL,
   autoFollowIndexInstances: 60000 * 60 * 24, // 1 day
   removeOldViews: 60000 * 60 * 24, // 1 day
-  removeOldHistory: 60000 * 60 * 24 // 1 day
+  removeOldHistory: 60000 * 60 * 24, // 1 day
+  updateInboxStats: 1000 * 60 * 5 // 5 minutes
 }
 
 // ---------------------------------------------------------------------------
@@ -634,6 +635,7 @@ const VIDEO_LIVE = {
   CLEANUP_DELAY: 1000 * 60 * 5, // 5 minutes
   SEGMENT_TIME_SECONDS: 4, // 4 seconds
   SEGMENTS_LIST_SIZE: 15, // 15 maximum segments in live playlist
+  REPLAY_DIRECTORY: 'replay',
   EDGE_LIVE_DELAY_SEGMENTS_NOTIFICATION: 4,
   RTMP: {
     CHUNK_SIZE: 60000,
@@ -746,6 +748,7 @@ if (isTestInstance() === true) {
   SCHEDULER_INTERVALS_MS.removeOldViews = 5000
   SCHEDULER_INTERVALS_MS.updateVideos = 5000
   SCHEDULER_INTERVALS_MS.autoFollowIndexInstances = 5000
+  SCHEDULER_INTERVALS_MS.updateInboxStats = 5000
   REPEAT_JOBS['videos-views'] = { every: 5000 }
 
   REDUNDANCY.VIDEOS.RANDOMIZED_FACTOR = 1

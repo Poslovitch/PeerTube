@@ -22,8 +22,9 @@ import {
   updateLive,
   uploadVideoAndGetId,
   userLogin,
-  waitUntilLiveStarts
+  waitUntilLivePublished
 } from '../../../../shared/extra-utils'
+import { HttpStatusCode } from '../../../../shared/core-utils/miscs/http-error-codes'
 
 describe('Test video lives API validator', function () {
   const path = '/api/v1/videos/live'
@@ -84,7 +85,8 @@ describe('Test video lives API validator', function () {
         tags: [ 'tag1', 'tag2' ],
         privacy: VideoPrivacy.PUBLIC,
         channelId,
-        saveReplay: false
+        saveReplay: false,
+        permanentLive: false
       }
     })
 
@@ -211,6 +213,12 @@ describe('Test video lives API validator', function () {
       await makeUploadRequest({ url: server.url, path, token: server.accessToken, fields, attaches })
     })
 
+    it('Should fail with save replay and permanent live set to true', async function () {
+      const fields = immutableAssign(baseCorrectParams, { saveReplay: true, permanentLive: true })
+
+      await makePostBodyRequest({ url: server.url, path, token: server.accessToken, fields })
+    })
+
     it('Should succeed with the correct parameters', async function () {
       this.timeout(30000)
 
@@ -219,7 +227,7 @@ describe('Test video lives API validator', function () {
         path,
         token: server.accessToken,
         fields: baseCorrectParams,
-        statusCodeExpected: 200
+        statusCodeExpected: HttpStatusCode.OK_200
       })
 
       videoId = res.body.video.id
@@ -237,7 +245,7 @@ describe('Test video lives API validator', function () {
         path,
         token: server.accessToken,
         fields: baseCorrectParams,
-        statusCodeExpected: 403
+        statusCodeExpected: HttpStatusCode.FORBIDDEN_403
       })
     })
 
@@ -256,7 +264,7 @@ describe('Test video lives API validator', function () {
         path,
         token: server.accessToken,
         fields,
-        statusCodeExpected: 403
+        statusCodeExpected: HttpStatusCode.FORBIDDEN_403
       })
     })
 
@@ -275,7 +283,7 @@ describe('Test video lives API validator', function () {
         path,
         token: server.accessToken,
         fields,
-        statusCodeExpected: 200
+        statusCodeExpected: HttpStatusCode.OK_200
       })
     })
 
@@ -292,7 +300,7 @@ describe('Test video lives API validator', function () {
         path,
         token: server.accessToken,
         fields: baseCorrectParams,
-        statusCodeExpected: 403
+        statusCodeExpected: HttpStatusCode.FORBIDDEN_403
       })
     })
 
@@ -310,7 +318,7 @@ describe('Test video lives API validator', function () {
         path,
         token: server.accessToken,
         fields: baseCorrectParams,
-        statusCodeExpected: 403
+        statusCodeExpected: HttpStatusCode.FORBIDDEN_403
       })
     })
   })
@@ -318,27 +326,27 @@ describe('Test video lives API validator', function () {
   describe('When getting live information', function () {
 
     it('Should fail without access token', async function () {
-      await getLive(server.url, '', videoId, 401)
+      await getLive(server.url, '', videoId, HttpStatusCode.UNAUTHORIZED_401)
     })
 
     it('Should fail with a bad access token', async function () {
-      await getLive(server.url, 'toto', videoId, 401)
+      await getLive(server.url, 'toto', videoId, HttpStatusCode.UNAUTHORIZED_401)
     })
 
     it('Should fail with access token of another user', async function () {
-      await getLive(server.url, userAccessToken, videoId, 403)
+      await getLive(server.url, userAccessToken, videoId, HttpStatusCode.FORBIDDEN_403)
     })
 
     it('Should fail with a bad video id', async function () {
-      await getLive(server.url, server.accessToken, 'toto', 400)
+      await getLive(server.url, server.accessToken, 'toto', HttpStatusCode.BAD_REQUEST_400)
     })
 
     it('Should fail with an unknown video id', async function () {
-      await getLive(server.url, server.accessToken, 454555, 404)
+      await getLive(server.url, server.accessToken, 454555, HttpStatusCode.NOT_FOUND_404)
     })
 
     it('Should fail with a non live video', async function () {
-      await getLive(server.url, server.accessToken, videoIdNotLive, 404)
+      await getLive(server.url, server.accessToken, videoIdNotLive, HttpStatusCode.NOT_FOUND_404)
     })
 
     it('Should succeed with the correct params', async function () {
@@ -349,27 +357,33 @@ describe('Test video lives API validator', function () {
   describe('When updating live information', async function () {
 
     it('Should fail without access token', async function () {
-      await updateLive(server.url, '', videoId, {}, 401)
+      await updateLive(server.url, '', videoId, {}, HttpStatusCode.UNAUTHORIZED_401)
     })
 
     it('Should fail with a bad access token', async function () {
-      await updateLive(server.url, 'toto', videoId, {}, 401)
+      await updateLive(server.url, 'toto', videoId, {}, HttpStatusCode.UNAUTHORIZED_401)
     })
 
     it('Should fail with access token of another user', async function () {
-      await updateLive(server.url, userAccessToken, videoId, {}, 403)
+      await updateLive(server.url, userAccessToken, videoId, {}, HttpStatusCode.FORBIDDEN_403)
     })
 
     it('Should fail with a bad video id', async function () {
-      await updateLive(server.url, server.accessToken, 'toto', {}, 400)
+      await updateLive(server.url, server.accessToken, 'toto', {}, HttpStatusCode.BAD_REQUEST_400)
     })
 
     it('Should fail with an unknown video id', async function () {
-      await updateLive(server.url, server.accessToken, 454555, {}, 404)
+      await updateLive(server.url, server.accessToken, 454555, {}, HttpStatusCode.NOT_FOUND_404)
     })
 
     it('Should fail with a non live video', async function () {
-      await updateLive(server.url, server.accessToken, videoIdNotLive, {}, 404)
+      await updateLive(server.url, server.accessToken, videoIdNotLive, {}, HttpStatusCode.NOT_FOUND_404)
+    })
+
+    it('Should fail with save replay and permanent live set to true', async function () {
+      const fields = { saveReplay: true, permanentLive: true }
+
+      await updateLive(server.url, server.accessToken, videoId, fields, HttpStatusCode.BAD_REQUEST_400)
     })
 
     it('Should succeed with the correct params', async function () {
@@ -384,32 +398,32 @@ describe('Test video lives API validator', function () {
         }
       })
 
-      await updateLive(server.url, server.accessToken, videoId, { saveReplay: true }, 403)
+      await updateLive(server.url, server.accessToken, videoId, { saveReplay: true }, HttpStatusCode.FORBIDDEN_403)
     })
 
     it('Should fail to update a live if it has already started', async function () {
-      this.timeout(20000)
+      this.timeout(40000)
 
       const resLive = await getLive(server.url, server.accessToken, videoId)
       const live: LiveVideo = resLive.body
 
       const command = sendRTMPStream(live.rtmpUrl, live.streamKey)
 
-      await waitUntilLiveStarts(server.url, server.accessToken, videoId)
-      await updateLive(server.url, server.accessToken, videoId, {}, 400)
+      await waitUntilLivePublished(server.url, server.accessToken, videoId)
+      await updateLive(server.url, server.accessToken, videoId, {}, HttpStatusCode.BAD_REQUEST_400)
 
       await stopFfmpeg(command)
     })
 
     it('Should fail to stream twice in the save live', async function () {
-      this.timeout(30000)
+      this.timeout(40000)
 
       const resLive = await getLive(server.url, server.accessToken, videoId)
       const live: LiveVideo = resLive.body
 
       const command = sendRTMPStream(live.rtmpUrl, live.streamKey)
 
-      await waitUntilLiveStarts(server.url, server.accessToken, videoId)
+      await waitUntilLivePublished(server.url, server.accessToken, videoId)
 
       await runAndTestFfmpegStreamError(server.url, server.accessToken, videoId, true)
 

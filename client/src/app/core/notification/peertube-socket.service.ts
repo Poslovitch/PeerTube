@@ -53,13 +53,17 @@ export class PeerTubeSocket {
 
     await this.importIOIfNeeded()
 
+    // Prevent protractor issues https://github.com/angular/angular/issues/11853
     this.ngZone.runOutsideAngular(() => {
       this.notificationSocket = this.io(environment.apiUrl + '/user-notifications', {
         query: { accessToken: this.auth.getAccessToken() }
       })
 
-      this.notificationSocket.on('new-notification', (n: UserNotificationServer) => this.dispatchNotificationEvent('new', n))
+      this.notificationSocket.on('new-notification', (n: UserNotificationServer) => {
+        this.ngZone.run(() => this.dispatchNotificationEvent('new', n))
+      })
     })
+
   }
 
   private async initLiveVideosSocket () {
@@ -67,12 +71,18 @@ export class PeerTubeSocket {
 
     await this.importIOIfNeeded()
 
+    // Prevent protractor issues https://github.com/angular/angular/issues/11853
     this.ngZone.runOutsideAngular(() => {
       this.liveVideosSocket = this.io(environment.apiUrl + '/live-videos')
-
-      const type: LiveVideoEventType = 'state-change'
-      this.liveVideosSocket.on(type, (payload: LiveVideoEventPayload) => this.dispatchLiveVideoEvent(type, payload))
     })
+
+    const types: LiveVideoEventType[] = [ 'views-change', 'state-change' ]
+
+    for (const type of types) {
+      this.liveVideosSocket.on(type, (payload: LiveVideoEventPayload) => {
+        this.ngZone.run(() => this.dispatchLiveVideoEvent(type, payload))
+      })
+    }
   }
 
   private async importIOIfNeeded () {

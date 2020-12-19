@@ -1,12 +1,13 @@
 import * as Bull from 'bull'
-import { readdir, remove } from 'fs-extra'
+import { pathExists, readdir, remove } from 'fs-extra'
 import { join } from 'path'
-import { hlsPlaylistToFragmentedMP4 } from '@server/helpers/ffmpeg-utils'
-import { getDurationFromVideoFile, getVideoFileResolution } from '@server/helpers/ffprobe-utils'
+import { ffprobePromise, getAudioStream, getDurationFromVideoFile, getVideoFileResolution } from '@server/helpers/ffprobe-utils'
+import { VIDEO_LIVE } from '@server/initializers/constants'
+import { LiveManager } from '@server/lib/live-manager'
 import { generateVideoMiniature } from '@server/lib/thumbnail'
 import { publishAndFederateIfNeeded } from '@server/lib/video'
 import { getHLSDirectory } from '@server/lib/video-paths'
-import { generateHlsPlaylist } from '@server/lib/video-transcoding'
+import { generateHlsPlaylistFromTS } from '@server/lib/video-transcoding'
 import { VideoModel } from '@server/models/video/video'
 import { VideoFileModel } from '@server/models/video/video-file'
 import { VideoLiveModel } from '@server/models/video/video-live'
@@ -36,6 +37,8 @@ async function processVideoLiveEnding (job: Bull.Job) {
     return
   }
 
+  LiveManager.Instance.cleanupShaSegments(video.uuid)
+
   if (live.saveReplay !== true) {
     return cleanupLive(video, streamingPlaylist)
   }
@@ -43,41 +46,32 @@ async function processVideoLiveEnding (job: Bull.Job) {
   return saveLive(video, live)
 }
 
+async function cleanupLive (video: MVideo, streamingPlaylist: MStreamingPlaylist) {
+  const hlsDirectory = getHLSDirectory(video)
+
+  await remove(hlsDirectory)
+
+  await streamingPlaylist.destroy()
+}
+
 // ---------------------------------------------------------------------------
 
 export {
-  processVideoLiveEnding
+  processVideoLiveEnding,
+  cleanupLive
 }
 
 // ---------------------------------------------------------------------------
 
 async function saveLive (video: MVideo, live: MVideoLive) {
   const hlsDirectory = getHLSDirectory(video, false)
-  const files = await readdir(hlsDirectory)
+  const replayDirectory = join(hlsDirectory, VIDEO_LIVE.REPLAY_DIRECTORY)
 
-  const playlistFiles = files.filter(f => f.endsWith('.m3u8') && f !== 'master.m3u8')
-  const resolutions: number[] = []
-  let duration: number
+  const rootFiles = await readdir(hlsDirectory)
 
-  for (const playlistFile of playlistFiles) {
-    const playlistPath = join(hlsDirectory, playlistFile)
-    const { videoFileResolution } = await getVideoFileResolution(playlistPath)
-
-    const mp4TmpPath = buildMP4TmpPath(hlsDirectory, videoFileResolution)
-
-    // Playlist name is for example 3.m3u8
-    // Segments names are 3-0.ts 3-1.ts etc
-    const shouldStartWith = playlistFile.replace(/\.m3u8$/, '') + '-'
-
-    const segmentFiles = files.filter(f => f.startsWith(shouldStartWith) && f.endsWith('.ts'))
-    await hlsPlaylistToFragmentedMP4(hlsDirectory, segmentFiles, mp4TmpPath)
-
-    if (!duration) {
-      duration = await getDurationFromVideoFile(mp4TmpPath)
-    }
-
-    resolutions.push(videoFileResolution)
-  }
+  const playlistFiles = rootFiles.filter(file => {
+    return file.endsWith('.m3u8') && file !== 'master.m3u8'
+  })
 
   await cleanupLiveFiles(hlsDirectory)
 
@@ -87,7 +81,6 @@ async function saveLive (video: MVideo, live: MVideoLive) {
   // Reinit views
   video.views = 0
   video.state = VideoState.TO_TRANSCODE
-  video.duration = duration
 
   await video.save()
 
@@ -98,20 +91,34 @@ async function saveLive (video: MVideo, live: MVideoLive) {
   await VideoFileModel.removeHLSFilesOfVideoId(hlsPlaylist.id)
   hlsPlaylist.VideoFiles = []
 
-  for (const resolution of resolutions) {
-    const videoInputPath = buildMP4TmpPath(hlsDirectory, resolution)
-    const { isPortraitMode } = await getVideoFileResolution(videoInputPath)
+  let durationDone = false
 
-    await generateHlsPlaylist({
+  for (const playlistFile of playlistFiles) {
+    const concatenatedTsFile = LiveManager.Instance.buildConcatenatedName(playlistFile)
+    const concatenatedTsFilePath = join(replayDirectory, concatenatedTsFile)
+
+    const probe = await ffprobePromise(concatenatedTsFilePath)
+    const { audioStream } = await getAudioStream(concatenatedTsFilePath, probe)
+
+    const { videoFileResolution, isPortraitMode } = await getVideoFileResolution(concatenatedTsFilePath, probe)
+
+    const outputPath = await generateHlsPlaylistFromTS({
       video: videoWithFiles,
-      videoInputPath,
-      resolution: resolution,
-      copyCodecs: true,
-      isPortraitMode
+      concatenatedTsFilePath,
+      resolution: videoFileResolution,
+      isPortraitMode,
+      isAAC: audioStream?.codec_name === 'aac'
     })
 
-    await remove(videoInputPath)
+    if (!durationDone) {
+      videoWithFiles.duration = await getDurationFromVideoFile(outputPath)
+      await videoWithFiles.save()
+
+      durationDone = true
+    }
   }
+
+  await remove(replayDirectory)
 
   // Regenerate the thumbnail & preview?
   if (videoWithFiles.getMiniature().automaticallyGenerated === true) {
@@ -122,19 +129,12 @@ async function saveLive (video: MVideo, live: MVideoLive) {
     await generateVideoMiniature(videoWithFiles, videoWithFiles.getMaxQualityFile(), ThumbnailType.PREVIEW)
   }
 
-  await publishAndFederateIfNeeded(video, true)
-}
-
-async function cleanupLive (video: MVideo, streamingPlaylist: MStreamingPlaylist) {
-  const hlsDirectory = getHLSDirectory(video)
-
-  await remove(hlsDirectory)
-
-  streamingPlaylist.destroy()
-    .catch(err => logger.error('Cannot remove live streaming playlist.', { err }))
+  await publishAndFederateIfNeeded(videoWithFiles, true)
 }
 
 async function cleanupLiveFiles (hlsDirectory: string) {
+  if (!await pathExists(hlsDirectory)) return
+
   const files = await readdir(hlsDirectory)
 
   for (const filename of files) {
@@ -151,8 +151,4 @@ async function cleanupLiveFiles (hlsDirectory: string) {
         .catch(err => logger.error('Cannot remove %s.', p, { err }))
     }
   }
-}
-
-function buildMP4TmpPath (basePath: string, resolution: number) {
-  return join(basePath, resolution + '-tmp.mp4')
 }

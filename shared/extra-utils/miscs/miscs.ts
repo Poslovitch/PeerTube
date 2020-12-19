@@ -6,6 +6,7 @@ import { ensureDir, pathExists, readFile, stat } from 'fs-extra'
 import { basename, dirname, isAbsolute, join, resolve } from 'path'
 import * as request from 'supertest'
 import * as WebTorrent from 'webtorrent'
+import { HttpStatusCode } from '../../../shared/core-utils/miscs/http-error-codes'
 
 const expect = chai.expect
 let webtorrent: WebTorrent.Instance
@@ -51,7 +52,7 @@ function buildServerDirectory (server: { internalServerNumber: number }, directo
 async function testImage (url: string, imageName: string, imagePath: string, extension = '.jpg') {
   const res = await request(url)
     .get(imagePath)
-    .expect(200)
+    .expect(HttpStatusCode.OK_200)
 
   const body = res.body
 
@@ -61,6 +62,10 @@ async function testImage (url: string, imageName: string, imagePath: string, ext
 
   expect(data.length).to.be.above(minLength, "the generated image is way smaller than the recorded fixture")
   expect(data.length).to.be.below(maxLength, "the generated image is way larger than the recorded fixture")
+}
+
+function isGithubCI () {
+  return !!process.env.GITHUB_WORKSPACE
 }
 
 function buildAbsoluteFixturePath (path: string, customCIPath = false) {
@@ -88,6 +93,7 @@ async function generateHighBitrateVideo () {
 
   const exists = await pathExists(tempFixturePath)
   if (!exists) {
+    console.log('Generating high bitrate video.')
 
     // Generate a random, high bitrate video on the fly, so we don't have to include
     // a large file in the repo. The video needs to have a certain minimum length so
@@ -115,6 +121,8 @@ async function generateVideoWithFramerate (fps = 60) {
 
   const exists = await pathExists(tempFixturePath)
   if (!exists) {
+    console.log('Generating video with framerate %d.', fps)
+
     return new Promise<string>((res, rej) => {
       ffmpeg()
         .outputOptions([ '-f rawvideo', '-video_size 1280x720', '-i /dev/urandom' ])
@@ -147,6 +155,7 @@ export {
   getFileSize,
   immutableAssign,
   testImage,
+  isGithubCI,
   buildAbsoluteFixturePath,
   root,
   generateHighBitrateVideo,

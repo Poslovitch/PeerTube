@@ -39,6 +39,15 @@ export const USER_EMAIL_VALIDATOR: BuildFormValidator = {
   }
 }
 
+export const USER_EXISTING_PASSWORD_VALIDATOR: BuildFormValidator = {
+  VALIDATORS: [
+    Validators.required
+  ],
+  MESSAGES: {
+    'required': $localize`Password is required.`
+  }
+}
+
 export const USER_PASSWORD_VALIDATOR: BuildFormValidator = {
   VALIDATORS: [
     Validators.required,
@@ -106,9 +115,7 @@ export const USER_DESCRIPTION_VALIDATOR: BuildFormValidator = {
 }
 
 export const USER_TERMS_VALIDATOR: BuildFormValidator = {
-  VALIDATORS: [
-    Validators.requiredTrue
-  ],
+  VALIDATORS: [ Validators.requiredTrue ],
   MESSAGES: {
     'required': $localize`You must agree with the instance terms in order to register on it.`
   }

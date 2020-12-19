@@ -1,8 +1,9 @@
 
+import * as Bluebird from 'bluebird'
 import * as chokidar from 'chokidar'
 import { FfmpegCommand } from 'fluent-ffmpeg'
-import { ensureDir, stat } from 'fs-extra'
-import { basename } from 'path'
+import { appendFile, ensureDir, readFile, stat } from 'fs-extra'
+import { basename, join } from 'path'
 import { isTestInstance } from '@server/helpers/core-utils'
 import { getLiveMuxingCommand, getLiveTranscodingCommand } from '@server/helpers/ffmpeg-utils'
 import { computeResolutionsToTranscode, getVideoFileFPS, getVideoFileResolution } from '@server/helpers/ffprobe-utils'
@@ -19,12 +20,14 @@ import { VideoState, VideoStreamingPlaylistType } from '@shared/models'
 import { federateVideoIfNeeded } from './activitypub/videos'
 import { buildSha256Segment } from './hls'
 import { JobQueue } from './job-queue'
+import { cleanupLive } from './job-queue/handlers/video-live-ending'
 import { PeerTubeSocket } from './peertube-socket'
 import { isAbleToUploadVideo } from './user'
 import { getHLSDirectory } from './video-paths'
 import { availableEncoders } from './video-transcoding-profiles'
 
 import memoizee = require('memoizee')
+
 const NodeRtmpServer = require('node-media-server/node_rtmp_server')
 const context = require('node-media-server/node_core_ctx')
 const nodeMediaServerLogger = require('node-media-server/node_core_logger')
@@ -152,6 +155,36 @@ class LiveManager {
     watchers.push(new Date().getTime())
   }
 
+  cleanupShaSegments (videoUUID: string) {
+    this.segmentsSha256.delete(videoUUID)
+  }
+
+  addSegmentToReplay (hlsVideoPath: string, segmentPath: string) {
+    const segmentName = basename(segmentPath)
+    const dest = join(hlsVideoPath, VIDEO_LIVE.REPLAY_DIRECTORY, this.buildConcatenatedName(segmentName))
+
+    return readFile(segmentPath)
+      .then(data => appendFile(dest, data))
+      .catch(err => logger.error('Cannot copy segment %s to repay directory.', segmentPath, { err }))
+  }
+
+  buildConcatenatedName (segmentOrPlaylistPath: string) {
+    const num = basename(segmentOrPlaylistPath).match(/^(\d+)(-|\.)/)
+
+    return 'concat-' + num[1] + '.ts'
+  }
+
+  private processSegments (hlsVideoPath: string, videoUUID: string, videoLive: MVideoLive, segmentPaths: string[]) {
+    Bluebird.mapSeries(segmentPaths, async previousSegment => {
+      // Add sha hash of previous segments, because ffmpeg should have finished generating them
+      await this.addSegmentSha(videoUUID, previousSegment)
+
+      if (videoLive.saveReplay) {
+        await this.addSegmentToReplay(hlsVideoPath, previousSegment)
+      }
+    }).catch(err => logger.error('Cannot process segments in %s', hlsVideoPath, { err }))
+  }
+
   private getContext () {
     return context
   }
@@ -181,6 +214,14 @@ class LiveManager {
     if (video.isBlacklisted()) {
       logger.warn('Video is blacklisted. Refusing stream %s.', streamKey)
       return this.abortSession(sessionId)
+    }
+
+    // Cleanup old potential live files (could happen with a permanent live)
+    this.cleanupShaSegments(video.uuid)
+
+    const oldStreamingPlaylist = await VideoStreamingPlaylistModel.loadHLSPlaylistByVideo(video.id)
+    if (oldStreamingPlaylist) {
+      await cleanupLive(video, oldStreamingPlaylist)
     }
 
     this.videoSessions.set(video.id, sessionId)
@@ -246,23 +287,29 @@ class LiveManager {
     for (let i = 0; i < allResolutions.length; i++) {
       const resolution = allResolutions[i]
 
-      VideoFileModel.upsert({
+      const file = new VideoFileModel({
         resolution,
         size: -1,
         extname: '.ts',
         infoHash: null,
         fps,
         videoStreamingPlaylistId: playlist.id
-      }).catch(err => {
-        logger.error('Cannot create file for live streaming.', { err })
       })
+
+      VideoFileModel.customUpsert(file, 'streaming-playlist', null)
+        .catch(err => logger.error('Cannot create file for live streaming.', { err }))
     }
 
     const outPath = getHLSDirectory(videoLive.Video)
     await ensureDir(outPath)
 
+    const replayDirectory = join(outPath, VIDEO_LIVE.REPLAY_DIRECTORY)
+
+    if (videoLive.saveReplay === true) {
+      await ensureDir(replayDirectory)
+    }
+
     const videoUUID = videoLive.Video.uuid
-    const deleteSegments = videoLive.saveReplay === false
 
     const ffmpegExec = CONFIG.LIVE.TRANSCODING.ENABLED
       ? await getLiveTranscodingCommand({
@@ -270,11 +317,10 @@ class LiveManager {
         outPath,
         resolutions: allResolutions,
         fps,
-        deleteSegments,
         availableEncoders,
         profile: 'default'
       })
-      : getLiveMuxingCommand(rtmpUrl, outPath, deleteSegments)
+      : getLiveMuxingCommand(rtmpUrl, outPath)
 
     logger.info('Running live muxing/transcoding for %s.', videoUUID)
     this.transSessions.set(sessionId, ffmpegExec)
@@ -284,21 +330,13 @@ class LiveManager {
     const segmentsToProcessPerPlaylist: { [playlistId: string]: string[] } = {}
     const playlistIdMatcher = /^([\d+])-/
 
-    const processHashSegments = (segmentsToProcess: string[]) => {
-      // Add sha hash of previous segments, because ffmpeg should have finished generating them
-      for (const previousSegment of segmentsToProcess) {
-        this.addSegmentSha(videoUUID, previousSegment)
-          .catch(err => logger.error('Cannot add sha segment of video %s -> %s.', videoUUID, previousSegment, { err }))
-      }
-    }
-
     const addHandler = segmentPath => {
       logger.debug('Live add handler of %s.', segmentPath)
 
       const playlistId = basename(segmentPath).match(playlistIdMatcher)[0]
 
       const segmentsToProcess = segmentsToProcessPerPlaylist[playlistId] || []
-      processHashSegments(segmentsToProcess)
+      this.processSegments(outPath, videoUUID, videoLive, segmentsToProcess)
 
       segmentsToProcessPerPlaylist[playlistId] = [ segmentPath ]
 
@@ -360,19 +398,25 @@ class LiveManager {
       logger.info('RTMP transmuxing for video %s ended. Scheduling cleanup', rtmpUrl)
 
       this.transSessions.delete(sessionId)
+
       this.watchersPerVideo.delete(videoLive.videoId)
+      this.videoSessions.delete(videoLive.videoId)
+
+      const newLivesPerUser = this.livesPerUser.get(user.id)
+                                               .filter(o => o.liveId !== videoLive.id)
+      this.livesPerUser.set(user.id, newLivesPerUser)
 
       setTimeout(() => {
         // Wait latest segments generation, and close watchers
 
         Promise.all([ tsWatcher.close(), masterWatcher.close() ])
-        .then(() => {
-          // Process remaining segments hash
-          for (const key of Object.keys(segmentsToProcessPerPlaylist)) {
-            processHashSegments(segmentsToProcessPerPlaylist[key])
-          }
-        })
-        .catch(err => logger.error('Cannot close watchers of %s or process remaining hash segments.', outPath, { err }))
+          .then(() => {
+            // Process remaining segments hash
+            for (const key of Object.keys(segmentsToProcessPerPlaylist)) {
+              this.processSegments(outPath, videoUUID, videoLive, segmentsToProcessPerPlaylist[key])
+            }
+          })
+          .catch(err => logger.error('Cannot close watchers of %s or process remaining hash segments.', outPath, { err }))
 
         this.onEndTransmuxing(videoLive.Video.id)
           .catch(err => logger.error('Error in closed transmuxing.', { err }))
@@ -400,14 +444,21 @@ class LiveManager {
       const fullVideo = await VideoModel.loadAndPopulateAccountAndServerAndTags(videoId)
       if (!fullVideo) return
 
-      JobQueue.Instance.createJob({
-        type: 'video-live-ending',
-        payload: {
-          videoId: fullVideo.id
-        }
-      }, { delay: cleanupNow ? 0 : VIDEO_LIVE.CLEANUP_DELAY })
+      const live = await VideoLiveModel.loadByVideoId(videoId)
 
-      fullVideo.state = VideoState.LIVE_ENDED
+      if (!live.permanentLive) {
+        JobQueue.Instance.createJob({
+          type: 'video-live-ending',
+          payload: {
+            videoId: fullVideo.id
+          }
+        }, { delay: cleanupNow ? 0 : VIDEO_LIVE.CLEANUP_DELAY })
+
+        fullVideo.state = VideoState.LIVE_ENDED
+      } else {
+        fullVideo.state = VideoState.WAITING_FOR_LIVE
+      }
+
       await fullVideo.save()
 
       PeerTubeSocket.Instance.sendVideoLiveNewState(fullVideo)
@@ -454,7 +505,7 @@ class LiveManager {
   private isDurationConstraintValid (streamingStartTime: number) {
     const maxDuration = CONFIG.LIVE.MAX_DURATION
     // No limit
-    if (maxDuration === null) return true
+    if (maxDuration < 0) return true
 
     const now = new Date().getTime()
     const max = streamingStartTime + maxDuration
@@ -485,6 +536,8 @@ class LiveManager {
       await video.save()
 
       await federateVideoIfNeeded(video, false)
+
+      PeerTubeSocket.Instance.sendVideoViewsUpdate(video)
 
       // Only keep not expired watchers
       const newWatchers = watchers.filter(w => w > notBefore)

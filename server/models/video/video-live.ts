@@ -28,7 +28,7 @@ import { VideoBlacklistModel } from './video-blacklist'
     }
   ]
 })
-export class VideoLiveModel extends Model<VideoLiveModel> {
+export class VideoLiveModel extends Model {
 
   @AllowNull(true)
   @Column(DataType.STRING)
@@ -37,6 +37,10 @@ export class VideoLiveModel extends Model<VideoLiveModel> {
   @AllowNull(false)
   @Column
   saveReplay: boolean
+
+  @AllowNull(false)
+  @Column
+  permanentLive: boolean
 
   @CreatedAt
   createdAt: Date
@@ -99,6 +103,7 @@ export class VideoLiveModel extends Model<VideoLiveModel> {
         : null,
 
       streamKey: this.streamKey,
+      permanentLive: this.permanentLive,
       saveReplay: this.saveReplay
     }
   }

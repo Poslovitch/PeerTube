@@ -23,8 +23,9 @@ import {
   updateCustomSubConfig,
   updateVideo,
   waitJobs,
-  waitUntilLiveStarts
+  waitUntilLivePublished
 } from '../../../../shared/extra-utils'
+import { HttpStatusCode } from '../../../../shared/core-utils/miscs/http-error-codes'
 
 const expect = chai.expect
 
@@ -89,7 +90,7 @@ describe('Save replay setting', function () {
       live: {
         enabled: true,
         allowReplay: true,
-        maxDuration: null,
+        maxDuration: -1,
         transcoding: {
           enabled: false,
           resolutions: {
@@ -118,7 +119,7 @@ describe('Save replay setting', function () {
 
       await waitJobs(servers)
 
-      await checkVideosExist(liveVideoUUID, false, 200)
+      await checkVideosExist(liveVideoUUID, false, HttpStatusCode.OK_200)
       await checkVideoState(liveVideoUUID, VideoState.WAITING_FOR_LIVE)
     })
 
@@ -126,24 +127,26 @@ describe('Save replay setting', function () {
       this.timeout(20000)
 
       ffmpegCommand = await sendRTMPStreamInVideo(servers[0].url, servers[0].accessToken, liveVideoUUID)
-      await waitUntilLiveStarts(servers[0].url, servers[0].accessToken, liveVideoUUID)
+      await waitUntilLivePublished(servers[0].url, servers[0].accessToken, liveVideoUUID)
 
       await waitJobs(servers)
 
-      await checkVideosExist(liveVideoUUID, true, 200)
+      await checkVideosExist(liveVideoUUID, true, HttpStatusCode.OK_200)
       await checkVideoState(liveVideoUUID, VideoState.PUBLISHED)
     })
 
     it('Should correctly delete the video files after the stream ended', async function () {
-      this.timeout(30000)
+      this.timeout(40000)
 
       await stopFfmpeg(ffmpegCommand)
 
       await waitJobs(servers)
 
       // Live still exist, but cannot be played anymore
-      await checkVideosExist(liveVideoUUID, false, 200)
+      await checkVideosExist(liveVideoUUID, false, HttpStatusCode.OK_200)
       await checkVideoState(liveVideoUUID, VideoState.LIVE_ENDED)
+
+      await waitJobs(servers)
 
       // No resolutions saved since we did not save replay
       await checkLiveCleanup(servers[0], liveVideoUUID, [])
@@ -155,10 +158,10 @@ describe('Save replay setting', function () {
       liveVideoUUID = await createLiveWrapper(false)
 
       ffmpegCommand = await sendRTMPStreamInVideo(servers[0].url, servers[0].accessToken, liveVideoUUID)
-      await waitUntilLiveStarts(servers[0].url, servers[0].accessToken, liveVideoUUID)
+      await waitUntilLivePublished(servers[0].url, servers[0].accessToken, liveVideoUUID)
 
       await waitJobs(servers)
-      await checkVideosExist(liveVideoUUID, true, 200)
+      await checkVideosExist(liveVideoUUID, true, HttpStatusCode.OK_200)
 
       await Promise.all([
         addVideoToBlacklist(servers[0].url, servers[0].accessToken, liveVideoUUID, 'bad live', true),
@@ -169,8 +172,8 @@ describe('Save replay setting', function () {
 
       await checkVideosExist(liveVideoUUID, false)
 
-      await getVideo(servers[0].url, liveVideoUUID, 401)
-      await getVideo(servers[1].url, liveVideoUUID, 404)
+      await getVideo(servers[0].url, liveVideoUUID, HttpStatusCode.UNAUTHORIZED_401)
+      await getVideo(servers[1].url, liveVideoUUID, HttpStatusCode.NOT_FOUND_404)
 
       await checkLiveCleanup(servers[0], liveVideoUUID, [])
     })
@@ -181,10 +184,10 @@ describe('Save replay setting', function () {
       liveVideoUUID = await createLiveWrapper(false)
 
       ffmpegCommand = await sendRTMPStreamInVideo(servers[0].url, servers[0].accessToken, liveVideoUUID)
-      await waitUntilLiveStarts(servers[0].url, servers[0].accessToken, liveVideoUUID)
+      await waitUntilLivePublished(servers[0].url, servers[0].accessToken, liveVideoUUID)
 
       await waitJobs(servers)
-      await checkVideosExist(liveVideoUUID, true, 200)
+      await checkVideosExist(liveVideoUUID, true, HttpStatusCode.OK_200)
 
       await Promise.all([
         testFfmpegStreamError(ffmpegCommand, true),
@@ -193,7 +196,7 @@ describe('Save replay setting', function () {
 
       await waitJobs(servers)
 
-      await checkVideosExist(liveVideoUUID, false, 404)
+      await checkVideosExist(liveVideoUUID, false, HttpStatusCode.NOT_FOUND_404)
       await checkLiveCleanup(servers[0], liveVideoUUID, [])
     })
   })
@@ -207,7 +210,7 @@ describe('Save replay setting', function () {
 
       await waitJobs(servers)
 
-      await checkVideosExist(liveVideoUUID, false, 200)
+      await checkVideosExist(liveVideoUUID, false, HttpStatusCode.OK_200)
       await checkVideoState(liveVideoUUID, VideoState.WAITING_FOR_LIVE)
     })
 
@@ -215,11 +218,11 @@ describe('Save replay setting', function () {
       this.timeout(20000)
 
       ffmpegCommand = await sendRTMPStreamInVideo(servers[0].url, servers[0].accessToken, liveVideoUUID)
-      await waitUntilLiveStarts(servers[0].url, servers[0].accessToken, liveVideoUUID)
+      await waitUntilLivePublished(servers[0].url, servers[0].accessToken, liveVideoUUID)
 
       await waitJobs(servers)
 
-      await checkVideosExist(liveVideoUUID, true, 200)
+      await checkVideosExist(liveVideoUUID, true, HttpStatusCode.OK_200)
       await checkVideoState(liveVideoUUID, VideoState.PUBLISHED)
     })
 
@@ -231,7 +234,7 @@ describe('Save replay setting', function () {
       await waitJobs(servers)
 
       // Live has been transcoded
-      await checkVideosExist(liveVideoUUID, true, 200)
+      await checkVideosExist(liveVideoUUID, true, HttpStatusCode.OK_200)
       await checkVideoState(liveVideoUUID, VideoState.PUBLISHED)
     })
 
@@ -258,10 +261,10 @@ describe('Save replay setting', function () {
       liveVideoUUID = await createLiveWrapper(true)
 
       ffmpegCommand = await sendRTMPStreamInVideo(servers[0].url, servers[0].accessToken, liveVideoUUID)
-      await waitUntilLiveStarts(servers[0].url, servers[0].accessToken, liveVideoUUID)
+      await waitUntilLivePublished(servers[0].url, servers[0].accessToken, liveVideoUUID)
 
       await waitJobs(servers)
-      await checkVideosExist(liveVideoUUID, true, 200)
+      await checkVideosExist(liveVideoUUID, true, HttpStatusCode.OK_200)
 
       await Promise.all([
         addVideoToBlacklist(servers[0].url, servers[0].accessToken, liveVideoUUID, 'bad live', true),
@@ -272,8 +275,8 @@ describe('Save replay setting', function () {
 
       await checkVideosExist(liveVideoUUID, false)
 
-      await getVideo(servers[0].url, liveVideoUUID, 401)
-      await getVideo(servers[1].url, liveVideoUUID, 404)
+      await getVideo(servers[0].url, liveVideoUUID, HttpStatusCode.UNAUTHORIZED_401)
+      await getVideo(servers[1].url, liveVideoUUID, HttpStatusCode.NOT_FOUND_404)
 
       await checkLiveCleanup(servers[0], liveVideoUUID, [ 720 ])
     })
@@ -284,10 +287,10 @@ describe('Save replay setting', function () {
       liveVideoUUID = await createLiveWrapper(true)
 
       ffmpegCommand = await sendRTMPStreamInVideo(servers[0].url, servers[0].accessToken, liveVideoUUID)
-      await waitUntilLiveStarts(servers[0].url, servers[0].accessToken, liveVideoUUID)
+      await waitUntilLivePublished(servers[0].url, servers[0].accessToken, liveVideoUUID)
 
       await waitJobs(servers)
-      await checkVideosExist(liveVideoUUID, true, 200)
+      await checkVideosExist(liveVideoUUID, true, HttpStatusCode.OK_200)
 
       await Promise.all([
         removeVideo(servers[0].url, servers[0].accessToken, liveVideoUUID),
@@ -296,7 +299,7 @@ describe('Save replay setting', function () {
 
       await waitJobs(servers)
 
-      await checkVideosExist(liveVideoUUID, false, 404)
+      await checkVideosExist(liveVideoUUID, false, HttpStatusCode.NOT_FOUND_404)
       await checkLiveCleanup(servers[0], liveVideoUUID, [])
     })
   })

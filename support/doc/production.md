@@ -84,7 +84,7 @@ $ cd /var/www/peertube && sudo -u peertube cp peertube-latest/config/production.
 Then edit the `config/production.yaml` file according to your webserver
 configuration.
 
-**PeerTube does not support webserver host change**. Keep in mind your domain name is definitive after your first PeerTube start.
+**PeerTube does not support webserver host change**. Even though [PeerTube CLI can help you to switch hostname](https://docs.joinpeertube.org/#/maintain-tools?id=update-hostjs) there's no official support for that since it is a risky operation that might result in unforeseen errors.
 
 ### Webserver
 
@@ -240,7 +240,6 @@ to your own administrator password, although it must be 6 characters or more.
 
 Now your instance is up you can:
 
- * Subscribe to the mailing list for PeerTube administrators: https://framalistes.org/sympa/subscribe/peertube-admin
  * Add your instance to the public PeerTube instances index if you want to: https://instances.joinpeertube.org/
  * Check [available CLI tools](/support/doc/tools.md)
 

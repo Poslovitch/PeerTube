@@ -1,4 +1,3 @@
-import * as Bluebird from 'bluebird'
 import * as express from 'express'
 import { move, readFile } from 'fs-extra'
 import * as magnetUtil from 'magnet-uri'
@@ -17,6 +16,7 @@ import {
 } from '@server/types/models'
 import { MVideoImport, MVideoImportFormattable } from '@server/types/models/video/video-import'
 import { VideoImportCreate, VideoImportState, VideoPrivacy, VideoState } from '../../../../shared'
+import { HttpStatusCode } from '../../../../shared/core-utils/miscs/http-error-codes'
 import { ThumbnailType } from '../../../../shared/models/videos/thumbnail.type'
 import { auditLoggerFactory, getAuditIdFromRes, VideoImportAuditView } from '../../../helpers/audit-logger'
 import { moveAndProcessCaptionFile } from '../../../helpers/captions-utils'
@@ -146,7 +146,7 @@ async function addYoutubeDLImport (req: express.Request, res: express.Response) 
   } catch (err) {
     logger.info('Cannot fetch information from import for URL %s.', targetUrl, { err })
 
-    return res.status(400).json({
+    return res.status(HttpStatusCode.BAD_REQUEST_400).json({
       error: 'Cannot fetch remote information of this URL.'
     }).end()
   }
@@ -313,7 +313,7 @@ function insertIntoDB (parameters: {
   tags: string[]
   videoImportAttributes: Partial<MVideoImport>
   user: MUser
-}): Bluebird<MVideoImportFormattable> {
+}): Promise<MVideoImportFormattable> {
   const { video, thumbnailModel, previewModel, videoChannel, tags, videoImportAttributes, user } = parameters
 
   return sequelizeTypescript.transaction(async t => {
